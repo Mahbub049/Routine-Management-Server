@@ -34,6 +34,20 @@ const routineSchema = new mongoose.Schema({
 
 const Routine = mongoose.model("Routine", routineSchema);
 
+
+// 🔧 Faculty schema
+const facultySchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  designation: { type: String, required: true },
+  type: { type: String, enum: ["Internal", "External"], required: true },
+  email: { type: String },
+  phone: { type: String },
+  department: { type: String },
+});
+
+const Faculty = mongoose.model("Faculty", facultySchema);
+
+
 // Test route
 app.get("/ping", (req, res) => res.send("pong"));
 
@@ -89,6 +103,57 @@ app.delete("/routines/:id", async (req, res) => {
     res.status(500).json({ message: "Failed to delete routine" });
   }
 });
+
+
+// 📥 POST: Add new faculty
+app.post("/faculties", async (req, res) => {
+  try {
+    const faculty = new Faculty(req.body);
+    await faculty.save();
+    res.status(201).json(faculty);
+  } catch (err) {
+    console.error("Error adding faculty:", err);
+    res.status(500).json({ message: "Failed to add faculty" });
+  }
+});
+
+// 📤 GET: Get all faculties (optional filter by type)
+app.get("/faculties", async (req, res) => {
+  try {
+    const query = {};
+    if (req.query.type) {
+      query.type = req.query.type; // e.g., Internal or External
+    }
+    const faculties = await Faculty.find(query);
+    res.json(faculties);
+  } catch (err) {
+    console.error("Error fetching faculties:", err);
+    res.status(500).json({ message: "Failed to fetch faculties" });
+  }
+});
+
+// ✏️ PUT: Update faculty by ID
+app.put("/faculties/:id", async (req, res) => {
+  try {
+    const updated = await Faculty.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(updated);
+  } catch (err) {
+    console.error("Error updating faculty:", err);
+    res.status(500).json({ message: "Failed to update faculty" });
+  }
+});
+
+// ❌ DELETE: Delete faculty by ID
+app.delete("/faculties/:id", async (req, res) => {
+  try {
+    await Faculty.findByIdAndDelete(req.params.id);
+    res.json({ message: "Faculty deleted" });
+  } catch (err) {
+    console.error("Error deleting faculty:", err);
+    res.status(500).json({ message: "Failed to delete faculty" });
+  }
+});
+
 
 // 🚀 Start server
 app.listen(5000, () => {
