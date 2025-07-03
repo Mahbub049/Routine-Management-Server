@@ -60,6 +60,18 @@ const facultySchema = new mongoose.Schema({
 
 const Faculty = mongoose.model("Faculty", facultySchema);
 
+const siteSettingsSchema = new mongoose.Schema({
+  semester: {
+    start_month: String,
+    start_year: String,
+    end_month: String,
+    end_year: String,
+  },
+  batches: [String],
+  classrooms: [String],
+});
+
+const SiteSettings = mongoose.model("SiteSettings", siteSettingsSchema);
 
 // Test route
 app.get("/ping", (req, res) => res.send("pong"));
@@ -186,6 +198,70 @@ app.delete("/faculties/:id", verifyJWT, async (req, res) => {
   } catch (err) {
     console.error("Error deleting faculty:", err);
     res.status(500).json({ message: "Failed to delete faculty" });
+  }
+});
+
+
+// GENERAL INFORMATION OF THE SITE
+app.get("/settings", verifyJWT, async (req, res) => {
+  let settings = await SiteSettings.findOne();
+  if (!settings) settings = new SiteSettings({});
+  res.json(settings);
+});
+
+app.put("/settings/semester", verifyJWT, async (req, res) => {
+  const { start_month, start_year, end_month, end_year } = req.body;
+  let settings = await SiteSettings.findOne();
+  if (!settings) settings = new SiteSettings({});
+  settings.semester = { start_month, start_year, end_month, end_year };
+  await settings.save();
+  res.json(settings.semester);
+});
+
+app.post("/settings/batches", verifyJWT, async (req, res) => {
+  const { batch } = req.body;
+  let settings = await SiteSettings.findOne();
+  if (!settings) settings = new SiteSettings({ batches: [], classrooms: [] });
+  if (!settings.batches.includes(batch)) settings.batches.push(batch);
+  await settings.save();
+  res.json(settings.batches);
+});
+
+
+app.delete("/settings/batches/:batch", verifyJWT, async (req, res) => {
+  let settings = await SiteSettings.findOne();
+  settings.batches = settings.batches.filter(b => b !== req.params.batch);
+  await settings.save();
+  res.json(settings.batches);
+});
+
+
+app.post("/settings/classrooms", verifyJWT, async (req, res) => {
+  const { room } = req.body;
+  let settings = await SiteSettings.findOne();
+  if (!settings) settings = new SiteSettings({ batches: [], classrooms: [] });
+  if (!settings.classrooms.includes(room)) settings.classrooms.push(room);
+  await settings.save();
+  res.json(settings.classrooms);
+});
+
+
+app.delete("/settings/classrooms/:room", verifyJWT, async (req, res) => {
+  let settings = await SiteSettings.findOne();
+  settings.classrooms = settings.classrooms.filter(r => r !== req.params.room);
+  await settings.save();
+  res.json(settings.classrooms);
+});
+
+
+// ⚠️ DELETE all routines (Semester End)
+app.delete("/routines", verifyJWT, async (req, res) => {
+  try {
+    await Routine.deleteMany({});
+    res.json({ message: "All routines deleted for semester end" });
+  } catch (err) {
+    console.error("Error deleting all routines:", err);
+    res.status(500).json({ message: "Failed to end semester" });
   }
 });
 
