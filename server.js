@@ -6,6 +6,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+require("dotenv").config(); // Make sure this is at the top
+const jwt = require("jsonwebtoken");
+const firebaseAdmin = require("./firebase-admin");
+
+const verifyJWT = require("./middleware/verifyJWT");
+
+
 // MongoDB Atlas connection
 mongoose.connect("mongodb+srv://admin:admin123@cluster0.h0zb1dz.mongodb.net/routineDB?retryWrites=true&w=majority&appName=Cluster0", {
   useNewUrlParser: true,
@@ -51,6 +58,28 @@ const Faculty = mongoose.model("Faculty", facultySchema);
 // Test route
 app.get("/ping", (req, res) => res.send("pong"));
 
+app.post("/api/admin/login", async (req, res) => {
+  const { token } = req.body;
+
+  try {
+    const decoded = await firebaseAdmin.auth().verifyIdToken(token);
+    const email = decoded.email;
+
+    // ✅ Use admin email from .env
+    if (email !== process.env.ADMIN_EMAIL) {
+      return res.status(403).json({ message: "Unauthorized admin" });
+    }
+
+    const jwtToken = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: "2h" });
+
+    res.json({ jwt: jwtToken });
+  } catch (error) {
+    console.error("Firebase verification failed", error);
+    res.status(401).json({ message: "Invalid Firebase token" });
+  }
+});
+
+
 // 🔍 GET routines (with filters)
 app.get("/routines", async (req, res) => {
   try {
@@ -70,7 +99,7 @@ app.get("/routines", async (req, res) => {
 });
 
 // ➕ POST routine (Create)
-app.post("/routines", async (req, res) => {
+app.post("/routines", verifyJWT, async (req, res) => {
   try {
     const newRoutine = new Routine(req.body);
     await newRoutine.save();
@@ -81,7 +110,7 @@ app.post("/routines", async (req, res) => {
   }
 });
 
-app.put("/routines/:id", async (req, res) => {
+app.put("/routines/:id", verifyJWT, async (req, res) => {
   console.log("🔥 PUT Request Received:", req.params.id, req.body); // 🔥 ADD THIS
   try {
     const updated = await Routine.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -94,7 +123,7 @@ app.put("/routines/:id", async (req, res) => {
 
 
 // ❌ DELETE routine/:id (Delete)
-app.delete("/routines/:id", async (req, res) => {
+app.delete("/routines/:id", verifyJWT, async (req, res) => {
   try {
     await Routine.findByIdAndDelete(req.params.id);
     res.json({ message: "Routine deleted" });
@@ -106,7 +135,7 @@ app.delete("/routines/:id", async (req, res) => {
 
 
 // 📥 POST: Add new faculty
-app.post("/faculties", async (req, res) => {
+app.post("/faculties", verifyJWT, async (req, res) => {
   try {
     const faculty = new Faculty(req.body);
     await faculty.save();
@@ -118,7 +147,7 @@ app.post("/faculties", async (req, res) => {
 });
 
 // 📤 GET: Get all faculties (optional filter by type)
-app.get("/faculties", async (req, res) => {
+app.get("/faculties", verifyJWT, async (req, res) => {
   try {
     const query = {};
     if (req.query.type) {
@@ -133,7 +162,7 @@ app.get("/faculties", async (req, res) => {
 });
 
 // ✏️ PUT: Update faculty by ID
-app.put("/faculties/:id", async (req, res) => {
+app.put("/faculties/:id", verifyJWT, async (req, res) => {
   try {
     const updated = await Faculty.findByIdAndUpdate(req.params.id, req.body, { new: true });
     res.json(updated);
@@ -144,7 +173,7 @@ app.put("/faculties/:id", async (req, res) => {
 });
 
 // ❌ DELETE: Delete faculty by ID
-app.delete("/faculties/:id", async (req, res) => {
+app.delete("/faculties/:id", verifyJWT, async (req, res) => {
   try {
     await Faculty.findByIdAndDelete(req.params.id);
     res.json({ message: "Faculty deleted" });
