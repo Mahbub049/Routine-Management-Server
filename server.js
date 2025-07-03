@@ -37,7 +37,13 @@ const routineSchema = new mongoose.Schema({
   batch: String,
   is_lab: Boolean,
   lab_fixed_time_range: String,
+
+  // 👇 New Fields for Lab with Two Faculties
+  faculty_name_2: String,
+  faculty_designation_2: String,
+  faculty_department_2: String
 });
+
 
 const Routine = mongoose.model("Routine", routineSchema);
 
