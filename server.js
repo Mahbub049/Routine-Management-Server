@@ -10,6 +10,13 @@ require("dotenv").config(); // Make sure this is at the top
 const jwt = require("jsonwebtoken");
 const firebaseAdmin = require("./firebase-admin");
 
+const cloudinary = require("cloudinary").v2;
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
 const verifyJWT = require("./middleware/verifyJWT");
 
 
@@ -61,15 +68,17 @@ const facultySchema = new mongoose.Schema({
 const Faculty = mongoose.model("Faculty", facultySchema);
 
 const siteSettingsSchema = new mongoose.Schema({
-  semester: {
-    start_month: String,
-    start_year: String,
-    end_month: String,
-    end_year: String,
-  },
+  semester: { start_month: String, start_year: String, end_month: String, end_year: String },
   batches: [String],
   classrooms: [String],
+  time_ranges: [String], // 👈 new
+  sections: [String],    // 👈 new
+  university_name: String,
+  department_name: String,
+  term_type: String, // "Trimester" or "Semester"
+  logo_url: String
 });
+
 
 const SiteSettings = mongoose.model("SiteSettings", siteSettingsSchema);
 
@@ -113,6 +122,59 @@ app.get("/routines", async (req, res) => {
   } catch (err) {
     console.error("Error retrieving routines:", err);
     res.status(500).json({ message: "Error retrieving filtered routines" });
+  }
+});
+
+// 🌐 Public GET route for PrintHeader access (no JWT required)
+app.get("/public-settings", async (req, res) => {
+  try {
+    let settings = await SiteSettings.findOne();
+    if (!settings) {
+      // Optional default settings if not found
+      settings = new SiteSettings({
+        semester: {
+          start_month: "July",
+          start_year: "2025",
+          end_month: "December",
+          end_year: "2025"
+        },
+        batches: [],
+        classrooms: []
+      });
+      await settings.save(); // Save the default once
+    }
+    res.json(settings);
+  } catch (err) {
+    console.error("❌ Failed to load public-settings:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+
+app.use(verifyJWT);
+
+const multer = require("multer");
+const upload = multer({ storage: multer.memoryStorage() });
+
+app.post("/upload/logo", verifyJWT, upload.single("file"), async (req, res) => {
+  try {
+    const fileBuffer = req.file.buffer;
+    const base64 = fileBuffer.toString("base64");
+    const dataURI = `data:${req.file.mimetype};base64,${base64}`;
+
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: "routine/logo"
+    });
+
+    const settings = await SiteSettings.findOne();
+    settings.logo_url = result.secure_url;
+    await settings.save();
+
+    res.json({ url: result.secure_url });
+  } catch (err) {
+    console.error("Logo upload failed", err);
+    res.status(500).json({ error: "Upload failed" });
   }
 });
 
@@ -209,6 +271,9 @@ app.get("/settings", verifyJWT, async (req, res) => {
   res.json(settings);
 });
 
+// 🌐 Public GET route for PrintHeader access (no JWT required
+
+
 app.put("/settings/semester", verifyJWT, async (req, res) => {
   const { start_month, start_year, end_month, end_year } = req.body;
   let settings = await SiteSettings.findOne();
@@ -263,6 +328,50 @@ app.delete("/routines", verifyJWT, async (req, res) => {
     console.error("Error deleting all routines:", err);
     res.status(500).json({ message: "Failed to end semester" });
   }
+});
+
+// POST/DELETE /settings/time-ranges
+app.post("/settings/time-ranges", verifyJWT, async (req, res) => {
+  const { time_range } = req.body;
+  const settings = await SiteSettings.findOne();
+  if (!settings.time_ranges.includes(time_range)) settings.time_ranges.push(time_range);
+  await settings.save();
+  res.json(settings.time_ranges);
+});
+
+app.delete("/settings/time-ranges/:range", verifyJWT, async (req, res) => {
+  const settings = await SiteSettings.findOne();
+  settings.time_ranges = settings.time_ranges.filter(r => r !== req.params.range);
+  await settings.save();
+  res.json(settings.time_ranges);
+});
+
+// POST/DELETE /settings/sections
+app.post("/settings/sections", verifyJWT, async (req, res) => {
+  const { section } = req.body;
+  const settings = await SiteSettings.findOne();
+  if (!settings.sections.includes(section)) settings.sections.push(section);
+  await settings.save();
+  res.json(settings.sections);
+});
+
+app.delete("/settings/sections/:section", verifyJWT, async (req, res) => {
+  const settings = await SiteSettings.findOne();
+  settings.sections = settings.sections.filter(s => s !== req.params.section);
+  await settings.save();
+  res.json(settings.sections);
+});
+
+// PUT /settings/general
+app.put("/settings/general", verifyJWT, async (req, res) => {
+  const { university_name, department_name, term_type, logo_url } = req.body;
+  const settings = await SiteSettings.findOne();
+  settings.university_name = university_name;
+  settings.department_name = department_name;
+  settings.term_type = term_type;
+  settings.logo_url = logo_url;
+  await settings.save();
+  res.json(settings);
 });
 
 
