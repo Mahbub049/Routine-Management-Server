@@ -1,11 +1,11 @@
+// DEPENDENCIES
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-
 const app = express();
 app.use(cors());
 app.use(express.json());
-
 require("dotenv").config(); // Make sure this is at the top
 const jwt = require("jsonwebtoken");
 const firebaseAdmin = require("./firebase-admin");
@@ -19,8 +19,11 @@ cloudinary.config({
 
 const verifyJWT = require("./middleware/verifyJWT");
 
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 // MongoDB Atlas connection
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
 mongoose.connect("mongodb+srv://admin:admin123@cluster0.h0zb1dz.mongodb.net/routineDB?retryWrites=true&w=majority&appName=Cluster0", {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -29,7 +32,11 @@ mongoose.connect("mongodb+srv://admin:admin123@cluster0.h0zb1dz.mongodb.net/rout
 }).catch((err) => {
   console.error("❌ MongoDB connection failed:", err);
 });
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+
+// Moongoose Schemas
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
 // Updated Routine schema
 const routineSchema = new mongoose.Schema({
   day: String,
@@ -50,10 +57,7 @@ const routineSchema = new mongoose.Schema({
   faculty_designation_2: String,
   faculty_department_2: String
 });
-
-
 const Routine = mongoose.model("Routine", routineSchema);
-
 
 // 🔧 Faculty schema
 const facultySchema = new mongoose.Schema({
@@ -64,7 +68,6 @@ const facultySchema = new mongoose.Schema({
   phone: { type: String },
   department: { type: String },
 });
-
 const Faculty = mongoose.model("Faculty", facultySchema);
 
 const siteSettingsSchema = new mongoose.Schema({
@@ -78,13 +81,29 @@ const siteSettingsSchema = new mongoose.Schema({
   term_type: String, // "Trimester" or "Semester"
   logo_url: String
 });
-
-
 const SiteSettings = mongoose.model("SiteSettings", siteSettingsSchema);
 
-// Test route
-app.get("/ping", (req, res) => res.send("pong"));
+// models/Course.js
+const courseSchema = new mongoose.Schema({
+  course_code: { type: String, required: true, unique: true },
+  course_title: { type: String, required: true },
+  credit_hour: { type: Number, required: true },
+  is_lab: { type: Boolean, default: false }
+});
+const Course = mongoose.model("Course", courseSchema);
 
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+// Test route
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+app.get("/ping", (req, res) => res.send("pong"));
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+// Public Routes
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
 app.post("/api/admin/login", async (req, res) => {
   const { token } = req.body;
 
@@ -105,7 +124,6 @@ app.post("/api/admin/login", async (req, res) => {
     res.status(401).json({ message: "Invalid Firebase token" });
   }
 });
-
 
 // 🔍 GET routines (with filters)
 app.get("/routines", async (req, res) => {
@@ -149,8 +167,7 @@ app.get("/public-settings", async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
-
-
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 app.use(verifyJWT);
 
@@ -373,6 +390,118 @@ app.put("/settings/general", verifyJWT, async (req, res) => {
   await settings.save();
   res.json(settings);
 });
+
+
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+// COURSE ROUTES (Directly inside server.js)
+// -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+// ➕ Add a new course
+app.post("/courses", verifyJWT, async (req, res) => {
+  try {
+    const course = await Course.create(req.body);
+    res.status(201).json(course);
+  } catch (err) {
+    console.error("Error creating course:", err);
+    res.status(500).json({ message: "Failed to create course" });
+  }
+});
+
+// 📥 Get all courses
+app.get("/courses", verifyJWT, async (req, res) => {
+  try {
+    const courses = await Course.find();
+    res.json(courses);
+  } catch (err) {
+    console.error("Error fetching courses:", err);
+    res.status(500).json({ message: "Failed to fetch courses" });
+  }
+});
+
+// 🔍 Get a course by course_code (used to auto-fill title & is_lab)
+app.get("/courses/:code", verifyJWT, async (req, res) => {
+  try {
+    const course = await Course.findOne({ course_code: req.params.code });
+    if (!course) return res.status(404).json({ message: "Course not found" });
+    res.json(course);
+  } catch (err) {
+    console.error("Error fetching course:", err);
+    res.status(500).json({ message: "Failed to fetch course" });
+  }
+});
+
+app.put("/courses/:id", verifyJWT, async (req, res) => {
+  try {
+    // Check if the course_code is being updated to an existing one
+    const existing = await Course.findOne({ course_code: req.body.course_code });
+    if (existing && existing._id.toString() !== req.params.id) {
+      return res.status(400).json({ message: "Course code already exists." });
+    }
+
+    const updated = await Course.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    res.json(updated);
+  } catch (err) {
+    console.error("Error updating course:", err);
+    res.status(500).json({ message: "Failed to update course" });
+  }
+});
+
+
+// ❌ Delete a course by ID
+app.delete("/courses/:id", verifyJWT, async (req, res) => {
+  try {
+    await Course.findByIdAndDelete(req.params.id);
+    res.json({ message: "Course deleted" });
+  } catch (err) {
+    console.error("Error deleting course:", err);
+    res.status(500).json({ message: "Failed to delete course" });
+  }
+});
+
+// ✅ Combined Conflict Check (Room + Section)
+// Combined Conflict Check: Room conflict OR Section conflict within the same batch
+app.get("/routines/check-conflict", verifyJWT, async (req, res) => {
+  const { day, time_range, room, section, batch, currentId } = req.query;
+
+  try {
+    // Room conflict
+    const roomConflict = await Routine.findOne({
+      day,
+      time_range,
+      room,
+      ...(currentId && { _id: { $ne: currentId } }),
+    });
+
+    if (roomConflict) {
+      return res.status(409).json({ message: "Room already has a class at this time." });
+    }
+
+    // Section conflict (ONLY if batch & section match)
+    const sectionConflict = await Routine.findOne({
+      day,
+      time_range,
+      batch,
+      section,
+      ...(currentId && { _id: { $ne: currentId } }),
+    });
+
+    if (sectionConflict) {
+      return res.status(409).json({ message: "This section of this batch already has a class at this time." });
+    }
+
+    res.status(200).json({ message: "No conflict" });
+  } catch (err) {
+    console.error("Conflict check error:", err);
+    res.status(500).json({ message: "Error checking conflict" });
+  }
+});
+
+
+
 
 
 // 🚀 Start server
