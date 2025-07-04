@@ -407,16 +407,33 @@ app.post("/courses", verifyJWT, async (req, res) => {
   }
 });
 
-// 📥 Get all courses
 app.get("/courses", verifyJWT, async (req, res) => {
   try {
-    const courses = await Course.find();
-    res.json(courses);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Fetch all, sort based on numeric part of course_code
+    const allCourses = await Course.find();
+    const sortedCourses = allCourses.sort((a, b) => {
+      const numA = parseInt(a.course_code?.split("-")[1] || "0");
+      const numB = parseInt(b.course_code?.split("-")[1] || "0");
+      return numA - numB;
+    });
+
+    const paginatedCourses = sortedCourses.slice(skip, skip + limit);
+
+    res.json({
+      total: sortedCourses.length,
+      courses: paginatedCourses
+    });
   } catch (err) {
     console.error("Error fetching courses:", err);
     res.status(500).json({ message: "Failed to fetch courses" });
   }
 });
+
+
 
 // 🔍 Get a course by course_code (used to auto-fill title & is_lab)
 app.get("/courses/:code", verifyJWT, async (req, res) => {
